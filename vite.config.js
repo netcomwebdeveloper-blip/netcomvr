@@ -6,7 +6,7 @@ export default defineConfig({
   //   /vr/family-friends/concept-1/  → A Day in My Family VR experience
   //   /vr/family-friends/concept-2/  → Every Family Is Special VR experience
   build: {
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       input: {
         main:     'index.html',

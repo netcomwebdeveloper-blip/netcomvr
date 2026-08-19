@@ -1,13 +1,17 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { TextLabel } from '../shared/labels.js';
 import { GardenEnvironment } from '../shared/environment.js';
 
 /* ============================================================================
    World — A Day in My Family (Concept 1)
    ---------------------------------------------------------------------------
-   Full 360° garden setting. The family home is suggested by simple outdoor
-   furniture and a decorative facade — the viewer stands in a warm garden and
-   the family life happens all around them.
+   Full 360° garden setting featuring:
+     • South Indian House (southindianhouse.glb) as the home backdrop
+     • Family group (myfamily.glb) standing in front on a glowing pedestal
+     • Garden environment with 360° sky dome, lawn, trees, flowers, table & bench
+     • Dynamic time-of-day lighting (morning → afternoon → evening → night)
+     • Interactive touch/click response and breathing float animation
 
    VR STAGING RULE:
      Camera NEVER moves while renderer.xr.isPresenting.
@@ -18,8 +22,9 @@ const WARM_ORANGE = new THREE.Color(0xffd180);
 const NOON_WHITE  = new THREE.Color(0xfff8f0);
 const AMBER_GOLD  = new THREE.Color(0xffb347);
 const NIGHT_BLUE  = new THREE.Color(0x3a5a8a);
+const TWO_PI      = Math.PI * 2;
 
-/** Stylized human figure from Three.js primitives. */
+/** Stylized human figure fallback */
 function makeFigure({ bodyColor = 0x4a90d9, headColor = 0xf5cba7, scale = 1 }) {
     const g = new THREE.Group();
 
@@ -149,11 +154,14 @@ export class World {
         this.scene   = scene;
         this.tweener = tweener;
 
-        this.caption    = null;
-        this.aha        = null;
-        this.parent1    = null;
-        this.parent2    = null;
-        this.child      = null;
+        this.caption      = null;
+        this.aha          = null;
+        this.parent1      = null;
+        this.parent2      = null;
+        this.child        = null;
+        this.familyMesh   = null;
+        this.houseMesh    = null;
+        this.sparkleGroup = null;
 
         this._garden    = null;
         this._sunLight  = null;
@@ -161,24 +169,47 @@ export class World {
         this._elapsed   = 0;
     }
 
-    build() {
+    /** Load external GLTF model with safe error fallback */
+    async loadModel(url) {
+        return new Promise((resolve) => {
+            const loader = new GLTFLoader();
+            loader.load(
+                url,
+                (gltf) => resolve(gltf),
+                undefined,
+                (err) => {
+                    console.warn(`[GLTFLoader c1] Warning loading ${url}:`, err);
+                    resolve(null);
+                }
+            );
+        });
+    }
+
+    build(models = {}) {
         // ----- Sky / garden environment (360°) -----
         this._garden = new GardenEnvironment(this.scene, {
             path:       true,
             flowers:    true,
-            treeRadius: 13,
-            treeCount:  20
+            treeRadius: 14,
+            treeCount:  22
         });
         this._garden.build();
 
         // ----- Lighting -----
         this._buildLighting();
 
-        // ----- Scene set: outdoor family space -----
-        this._buildOutdoorSet();
+        // Support both single model (legacy) or multi-model object
+        const familyGltf = models?.family || (models?.scene ? models : null);
+        const houseGltf  = models?.house || null;
 
-        // ----- Characters -----
-        this._buildCharacters();
+        // ----- South Indian House Backdrop -----
+        this._buildHouse(houseGltf);
+
+        // ----- Garden props (picnic table, bench, flowers, balls) -----
+        this._buildOutdoorProps();
+
+        // ----- Family Group (myfamily.glb) -----
+        this._buildFamily(familyGltf);
 
         // ----- Caption label -----
         this._buildCaption();
@@ -196,13 +227,12 @@ export class World {
     }
 
     _buildLighting() {
-        // Remove any default background — sky dome handles it
         this.scene.background = null;
 
-        this._ambient = new THREE.AmbientLight(0xfff5e8, 0.65);
+        this._ambient = new THREE.AmbientLight(0xfff5e8, 0.70);
         this.scene.add(this._ambient);
 
-        this._sunLight = new THREE.DirectionalLight(WARM_ORANGE, 1.8);
+        this._sunLight = new THREE.DirectionalLight(WARM_ORANGE, 1.9);
         this._sunLight.position.set(-12, 18, 10);
         this._sunLight.castShadow = true;
         this._sunLight.shadow.mapSize.set(1024, 1024);
@@ -223,57 +253,59 @@ export class World {
         this.scene.add(fill);
     }
 
-    _buildOutdoorSet() {
-        // Simple house façade — warm wall behind the action
+    _buildHouse(gltfModel) {
+        if (gltfModel && gltfModel.scene) {
+            const house = gltfModel.scene;
+            house.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                        if (child.material.isMeshStandardMaterial || child.material.isMeshPhysicalMaterial) {
+                            child.material.metalness = 0.0;
+                            child.material.roughness = 0.5;
+                        }
+                        child.material.side = THREE.DoubleSide;
+                        child.material.transparent = true;
+                        child.material.alphaTest = 0.02;
+                        child.material.depthWrite = true;
+                        child.material.toneMapped = false;
+                        if (child.material.map) {
+                            child.material.map.colorSpace = THREE.SRGBColorSpace;
+                            child.material.map.needsUpdate = true;
+                        }
+                    }
+                }
+            });
+
+            house.rotation.set(0, 0, 0);
+            house.scale.set(1.85, 1.85, 1.85);
+            house.position.set(0, 1.85, -2.6);
+            this.scene.add(house);
+            this.houseMesh = house;
+            return;
+        }
+
+        // Fallback procedural facade if GLTF missing
         const facadeMat = new THREE.MeshLambertMaterial({ color: 0xfdf0d0, side: THREE.FrontSide });
         const facade    = new THREE.Mesh(new THREE.PlaneGeometry(6, 3.2), facadeMat);
         facade.position.set(0, 1.6, -3.8);
         facade.receiveShadow = true;
-        facade.matrixAutoUpdate = false;
-        facade.updateMatrix();
         this.scene.add(facade);
+    }
 
-        // Roof triangle
-        const roofShape = new THREE.Shape();
-        roofShape.moveTo(-3.4, 0); roofShape.lineTo(3.4, 0); roofShape.lineTo(0, 1.6);
-        const roofGeo = new THREE.ShapeGeometry(roofShape);
-        const roof    = new THREE.Mesh(roofGeo, new THREE.MeshLambertMaterial({ color: 0xd4694a }));
-        roof.position.set(0, 3.2, -3.79);
-        roof.matrixAutoUpdate = false;
-        roof.updateMatrix();
-        this.scene.add(roof);
-
-        // Door
-        const door = new THREE.Mesh(
-            new THREE.BoxGeometry(0.55, 1.1, 0.08),
-            new THREE.MeshLambertMaterial({ color: 0x8b5e3c })
-        );
-        door.position.set(0, 0.55, -3.76);
-        door.matrixAutoUpdate = false;
-        door.updateMatrix();
-        this.scene.add(door);
-
-        // Window left
-        const winMat = new THREE.MeshBasicMaterial({ color: 0xc8eeff, toneMapped: false });
-        for (const x of [-1.5, 1.5]) {
-            const win = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.65), winMat);
-            win.position.set(x, 1.3, -3.77);
-            win.matrixAutoUpdate = false;
-            win.updateMatrix();
-            this.scene.add(win);
-        }
-
+    _buildOutdoorProps() {
         // Outdoor picnic table (left)
         const table = makeOutdoorTable();
-        table.position.set(-2.4, 0, -1.6);
-        table.rotation.y = 0.2;
+        table.position.set(-2.4, 0, -1.5);
+        table.rotation.y = 0.25;
         table.matrixAutoUpdate = false;
         table.updateMatrix();
         this.scene.add(table);
 
         // Garden bench (right)
         const bench = makeGardenBench();
-        bench.position.set(2.6, 0, -1.8);
+        bench.position.set(2.6, 0, -1.6);
         bench.rotation.y = -0.35;
         bench.matrixAutoUpdate = false;
         bench.updateMatrix();
@@ -289,32 +321,113 @@ export class World {
             this.scene.add(ball);
         });
 
-        // Potted plants
-        for (const [x, z] of [[-2.8, -3.6], [2.8, -3.6]]) {
-            // Pot
+        // Potted plants at garden sides
+        for (const [x, z] of [[-3.0, -2.8], [3.0, -2.8]]) {
             const pot = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.18, 0.12, 0.28, 12),
+                new THREE.CylinderGeometry(0.20, 0.14, 0.32, 12),
                 new THREE.MeshLambertMaterial({ color: 0xc0784e })
             );
-            pot.position.set(x, 0.14, z);
+            pot.position.set(x, 0.16, z);
             pot.castShadow = true;
             pot.matrixAutoUpdate = false;
             pot.updateMatrix();
             this.scene.add(pot);
-            // Plant
+
             const plant = new THREE.Mesh(
-                new THREE.SphereGeometry(0.22, 10, 8),
+                new THREE.SphereGeometry(0.26, 10, 8),
                 new THREE.MeshLambertMaterial({ color: 0x3a9a3a })
             );
-            plant.position.set(x, 0.55, z);
+            plant.position.set(x, 0.60, z);
             plant.castShadow = true;
             plant.matrixAutoUpdate = false;
             plant.updateMatrix();
             this.scene.add(plant);
         }
+
+        // Flower patches along garden border
+        for (let i = 0; i < 10; i++) {
+            const angle = (i / 10) * TWO_PI;
+            const flower = new THREE.Mesh(
+                new THREE.CircleGeometry(0.11, 8),
+                new THREE.MeshLambertMaterial({
+                    color: [0xff6b8a, 0xffd740, 0xff9e57, 0xba68c8][i % 4],
+                    side: THREE.DoubleSide
+                })
+            );
+            flower.position.set(
+                Math.cos(angle) * 0.55 - 2.0,
+                0.01,
+                Math.sin(angle) * 0.38 - 1.2
+            );
+            flower.rotation.x = -Math.PI / 2;
+            flower.matrixAutoUpdate = false;
+            flower.updateMatrix();
+            this.scene.add(flower);
+        }
     }
 
-    _buildCharacters() {
+    _buildFamily(gltfModel) {
+        if (gltfModel && gltfModel.scene) {
+            const model = gltfModel.scene;
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                        if (child.material.isMeshStandardMaterial || child.material.isMeshPhysicalMaterial) {
+                            child.material.metalness = 0.0;
+                            child.material.roughness = 0.3;
+                        }
+                        child.material.side = THREE.DoubleSide;
+                        child.material.transparent = true;
+                        child.material.alphaTest = 0.02;
+                        child.material.depthWrite = true;
+                        child.material.toneMapped = false;
+                        if (child.material.map) {
+                            child.material.map.colorSpace = THREE.SRGBColorSpace;
+                            child.material.map.needsUpdate = true;
+                        }
+                    }
+                }
+            });
+
+            // Set upright and facing forward: (0, PI/2, PI/2)
+            model.rotation.set(0, Math.PI / 2, Math.PI / 2);
+            model.scale.set(0.11, 0.11, 0.11);
+            model.position.set(0, 1.15, -1.0);
+            this.scene.add(model);
+            this.familyMesh = model;
+
+            // Glowing garden pedestal under the family
+            const pedestal = new THREE.Mesh(
+                new THREE.CylinderGeometry(1.4, 1.5, 0.08, 24),
+                new THREE.MeshLambertMaterial({ color: 0xfff3cf })
+            );
+            pedestal.position.set(0, 0.04, -1.0);
+            pedestal.receiveShadow = true;
+            this.scene.add(pedestal);
+
+            // Dedicated warm accent light on the family
+            const spot = new THREE.PointLight(0xfff7e6, 2.5, 10);
+            spot.position.set(0, 2.5, 0.5);
+            this.scene.add(spot);
+
+            // Floating sparkle stars around the family
+            this.sparkleGroup = new THREE.Group();
+            const starMat = new THREE.MeshBasicMaterial({ color: 0xffe680, side: THREE.DoubleSide });
+            for (let s = 0; s < 6; s++) {
+                const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), starMat);
+                const a = (s / 6) * TWO_PI;
+                star.position.set(Math.cos(a) * 1.3, 1.2 + Math.sin(a * 2) * 0.4, -1.0 + Math.sin(a) * 0.3);
+                star.userData.baseY = star.position.y;
+                star.userData.phase = s * 1.1;
+                this.sparkleGroup.add(star);
+            }
+            this.scene.add(this.sparkleGroup);
+            return;
+        }
+
+        // Fallback procedural figures
         this.parent1 = makeFigure({ bodyColor: 0xd95b43, headColor: 0xf5cba7, scale: 1 });
         this.parent1.position.set(-1.4, 0, -1.2);
         this.scene.add(this.parent1);
@@ -330,55 +443,27 @@ export class World {
     }
 
     _buildCaption() {
-        this.caption = new TextLabel({
-            text:        '',
-            worldWidth:  3.4,
-            fontSize:    72,
-            color:       '#ffffff',
-            background:  'rgba(15,35,55,0.72)',
-            outlineWidth: 0,
-            padding:     28
-        });
-        this.caption.mesh.position.set(0, 2.85, -2.5);
-        this.caption.mesh.matrixAutoUpdate = true;
-        this.scene.add(this.caption.mesh);
+        // Dialogue subtitle box removed entirely per user request
+        this.caption = null;
     }
 
     _buildAhaMoment() {
-        this.aha = new THREE.Group();
-        this.aha.visible = false;
-
-        const items = [
-            { label: '🌅', color: '#f4a261', x: -1.8 },
-            { label: '📚', color: '#4a7abf', x: -0.9 },
-            { label: '🍽️', color: '#e76f51', x:  0.0 },
-            { label: '🎮', color: '#52b788', x:  0.9 },
-            { label: '🌙', color: '#364f6b', x:  1.8 }
-        ];
-
-        items.forEach(({ label, color, x }) => {
-            const icon = makeAhaIcon(label, color);
-            icon.position.set(x, 2.5, -2.4);
-            icon.userData.baseY = 2.5;
-            icon.matrixAutoUpdate = true;
-            this.aha.add(icon);
-        });
-
-        this.scene.add(this.aha);
+        // 5 icons removed per user request
+        this.aha = null;
     }
 
     /* ---------------------------------------------------------------- API */
 
     say(text) {
-        if (this.caption) this.caption.setText(text);
+        // Dialogue subtitle box removed entirely per user request
     }
 
     setTimeOfDay(phase, tweener) {
         const configs = {
-            morning:   { sunColor: WARM_ORANGE, sunI: 1.8, ambI: 0.65 },
-            afternoon: { sunColor: NOON_WHITE,  sunI: 2.2, ambI: 0.80 },
-            evening:   { sunColor: AMBER_GOLD,  sunI: 1.3, ambI: 0.45 },
-            night:     { sunColor: NIGHT_BLUE,  sunI: 0.4, ambI: 0.20 }
+            morning:   { sunColor: WARM_ORANGE, sunI: 1.9, ambI: 0.70 },
+            afternoon: { sunColor: NOON_WHITE,  sunI: 2.3, ambI: 0.85 },
+            evening:   { sunColor: AMBER_GOLD,  sunI: 1.4, ambI: 0.50 },
+            night:     { sunColor: NIGHT_BLUE,  sunI: 0.45, ambI: 0.22 }
         };
         const cfg = configs[phase] || configs.morning;
         const toC = new THREE.Color(cfg.sunColor);
@@ -395,10 +480,19 @@ export class World {
     }
 
     showAha(visible) {
-        if (this.aha) this.aha.visible = visible;
+        // 5 icons removed per user request
     }
 
     bringForward(who, z, tweener) {
+        if (this.familyMesh) {
+            const fromZ = this.familyMesh.position.z;
+            const targetZ = typeof z === 'number' ? z : -0.5;
+            return tweener.add(1.8, (p) => {
+                this.familyMesh.position.z = fromZ + (targetZ - fromZ) * p;
+                const s = 0.11 * (1 + Math.sin(p * Math.PI) * 0.14);
+                this.familyMesh.scale.set(s, s, s);
+            });
+        }
         const fig = ({ parent1: this.parent1, parent2: this.parent2, child: this.child })[who];
         if (!fig) return Promise.resolve();
         const fromZ = fig.position.z;
@@ -406,7 +500,25 @@ export class World {
     }
 
     sendBack(who, z, tweener) {
+        if (this.familyMesh) {
+            const fromZ = this.familyMesh.position.z;
+            const targetZ = typeof z === 'number' ? z : -1.0;
+            return tweener.add(1.8, (p) => {
+                this.familyMesh.position.z = fromZ + (targetZ - fromZ) * p;
+                this.familyMesh.scale.set(0.11, 0.11, 0.11);
+            });
+        }
         return this.bringForward(who, z, tweener);
+    }
+
+    triggerInteraction() {
+        if (this.familyMesh) {
+            this.tweener.add(0.7, (p) => {
+                const s = 0.11 * (1 + Math.sin(p * Math.PI) * 0.18);
+                this.familyMesh.scale.set(s, s, s);
+                this.familyMesh.rotation.z = Math.PI / 2 + Math.sin(p * Math.PI * 2) * 0.10;
+            });
+        }
     }
 
     /* ---------------------------------------------------------------- loop */
@@ -417,7 +529,20 @@ export class World {
         // Garden cloud drift
         this._garden?.update(elapsed);
 
-        // Character idle animation
+        // Family breathing float
+        if (this.familyMesh) {
+            this.familyMesh.position.y = 1.15 + Math.sin(elapsed * 2.0) * 0.035;
+        }
+
+        // Sparkle stars float
+        if (this.sparkleGroup) {
+            this.sparkleGroup.children.forEach((star) => {
+                star.rotation.y += 0.03;
+                star.position.y = (star.userData.baseY || 1.2) + Math.sin(elapsed * 2.5 + (star.userData.phase || 0)) * 0.06;
+            });
+        }
+
+        // Fallback character idle animation
         const figures = [
             { fig: this.parent1, phase: 0   },
             { fig: this.parent2, phase: 1.1 },
@@ -430,15 +555,5 @@ export class World {
             if (fig.userData.lArm) fig.userData.lArm.rotation.z = 0.30 + Math.sin(t * 1.3) * 0.08;
             if (fig.userData.rArm) fig.userData.rArm.rotation.z = -0.30 + Math.sin(t * 1.3 + Math.PI) * 0.08;
         });
-
-        // Aha icons float
-        if (this.aha?.visible) {
-            this.aha.children.forEach((icon, i) => {
-                icon.position.y = (icon.userData.baseY || 2.5) + Math.sin(elapsed * 1.2 + i * 1.1) * 0.055;
-            });
-        }
-
-        // Caption always faces viewer
-        if (this.caption) this.caption.mesh.lookAt(0, 2.85, 5);
     }
 }

@@ -1,3 +1,25 @@
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# Production build
 dist/
-.vercel/
+dist-ssr/
+*.local
+
+# Vite / Temp
+.vite/
+.vite-temp/
+*.log
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

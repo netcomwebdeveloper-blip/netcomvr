@@ -60,11 +60,24 @@ export class TextLabel {
         this.geo  = new THREE.PlaneGeometry(1, 1);
         this.mesh = new THREE.Mesh(this.geo, mat);
         this.mesh.matrixAutoUpdate = false;
+        this.mesh.visible = false; // Hide until non-empty text is set
 
-        if (text) this.setText(text);
+        if (text && text.trim()) {
+            this.setText(text);
+        }
     }
 
     setText(text) {
+        if (!text || !String(text).trim()) {
+            this.mesh.visible = false;
+            if (this.canvas.width > 0 && this.canvas.height > 0) {
+                this.ctx2d.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.texture.needsUpdate = true;
+            }
+            return;
+        }
+
+        this.mesh.visible = true;
         const { worldWidth, fontSize, color, background, outlineWidth, outlineColor, align, padding } = this._opts;
         const font    = `700 ${fontSize}px "Baloo 2", "Segoe UI Rounded", system-ui, sans-serif`;
         const canvas  = this.canvas;

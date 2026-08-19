@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { TextLabel } from '../shared/labels.js';
 import { GardenEnvironment } from '../shared/environment.js';
 
@@ -8,6 +9,9 @@ import { GardenEnvironment } from '../shared/environment.js';
    Full 360° shared garden sky. Each family group has a distinct coloured
    ground patch + backdrop — but they all live under the same beautiful sky,
    reinforcing the "all families share the same world" theme.
+
+   Family A features the 3D GLB model (myfamily.glb), while Families B and C
+   feature stylized figures representing diverse backgrounds.
 
    Families slide into view (objects move, camera stays still in VR).
    ========================================================================== */
@@ -122,40 +126,41 @@ function makeGroundPatch(color, w = 5, d = 5.5) {
     return mesh;
 }
 
-/** Backdrop arch/banner for each family */
+/** Backdrop arch/banner for each family — placed in front of house, above family */
 function makeBackdrop(color, label) {
     const g = new THREE.Group();
 
-    // Archway (two pillars + lintel)
+    // Archway (two decorative pillars + lintel in front of the house, framing the family)
     const pillarMat = new THREE.MeshLambertMaterial({ color });
     const pillar    = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.12, 0.14, 2.8, 10),
+        new THREE.CylinderGeometry(0.09, 0.11, 2.7, 10),
         pillarMat
     );
-    for (const x of [-2.0, 2.0]) {
+    for (const x of [-1.65, 1.65]) {
         const p = pillar.clone();
-        p.position.set(x, 1.4, -2.8);
+        p.position.set(x, 1.35, -0.95);
         p.castShadow = true;
         p.matrixAutoUpdate = false;
         p.updateMatrix();
         g.add(p);
     }
     const lintel = new THREE.Mesh(
-        new THREE.BoxGeometry(4.5, 0.2, 0.18),
+        new THREE.BoxGeometry(3.6, 0.16, 0.14),
         pillarMat
     );
-    lintel.position.set(0, 2.9, -2.8);
+    lintel.position.set(0, 2.72, -0.95);
     lintel.castShadow = true;
     lintel.matrixAutoUpdate = false;
     lintel.updateMatrix();
     g.add(lintel);
 
-    // Family name label floating on arch
+    // Family name label floating prominently above the arch and in front of house
     const lbl = new TextLabel({
-        text: label, worldWidth: 1.6, fontSize: 64,
-        color: '#ffffff', background: `rgba(${hexToRgb(color).join(',')},0.8)`, padding: 20
+        text: label, worldWidth: 2.8, fontSize: 86,
+        color: '#ffffff', background: `rgba(${hexToRgb(color).join(',')},0.94)`,
+        borderColor: '#ffd54f', borderWidth: 4, padding: 28
     });
-    lbl.mesh.position.set(0, 2.95, -2.78);
+    lbl.mesh.position.set(0, 2.88, -0.90);
     lbl.mesh.matrixAutoUpdate = true;
     g.add(lbl.mesh);
 
@@ -172,26 +177,153 @@ function hexToRgb(hex) {
    Three distinct family groups
    ------------------------------------------------------------------ */
 
-function buildFamilyA() {
+function setupGlbFamily(gltfModel, group, {
+    scale = 0.11,
+    position = [0, 1.15, -1.0],
+    pedestalColor = 0xfff3cf,
+    lightColor = 0xfff7e6,
+    starColor = 0xffe680
+} = {}) {
+    if (!gltfModel || !gltfModel.scene) return false;
+
+    const model = gltfModel.scene;
+    model.traverse((child) => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            if (child.material) {
+                if (child.material.isMeshStandardMaterial || child.material.isMeshPhysicalMaterial) {
+                    child.material.metalness = 0.0;
+                    child.material.roughness = 0.3;
+                }
+                child.material.side = THREE.DoubleSide;
+                child.material.transparent = true;
+                child.material.alphaTest = 0.02;
+                child.material.depthWrite = true;
+                child.material.toneMapped = false;
+                if (child.material.map) {
+                    child.material.map.colorSpace = THREE.SRGBColorSpace;
+                    child.material.map.needsUpdate = true;
+                }
+            }
+        }
+    });
+
+    // Rotate upright and face forward: (0, PI/2, PI/2)
+    model.rotation.set(0, Math.PI / 2, Math.PI / 2);
+    model.scale.set(scale, scale, scale);
+    model.position.fromArray(position);
+    group.add(model);
+    group.userData.glbModel = model;
+    group.userData.figures = [];
+
+    // Glowing garden pedestal under the family
+    const pedestal = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.4, 1.5, 0.08, 24),
+        new THREE.MeshLambertMaterial({ color: pedestalColor })
+    );
+    pedestal.position.set(position[0], 0.04, position[2]);
+    pedestal.receiveShadow = true;
+    group.add(pedestal);
+
+    // Dedicated warm accent light on the family
+    const spot = new THREE.PointLight(lightColor, 2.5, 10);
+    spot.position.set(position[0], 2.5, position[2] + 1.5);
+    group.add(spot);
+
+    // Floating sparkle stars around the family
+    const sparkleGroup = new THREE.Group();
+    const starMat = new THREE.MeshBasicMaterial({ color: starColor, side: THREE.DoubleSide });
+    for (let s = 0; s < 6; s++) {
+        const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), starMat);
+        const a = (s / 6) * Math.PI * 2;
+        star.position.set(position[0] + Math.cos(a) * 1.3, 1.2 + Math.sin(a * 2) * 0.4, position[2] + Math.sin(a) * 0.3);
+        star.userData.baseY = star.position.y;
+        star.userData.phase = s * 1.1;
+        sparkleGroup.add(star);
+    }
+    group.add(sparkleGroup);
+    group.userData.sparkles = sparkleGroup;
+
+    return true;
+}
+
+function setupGlbHouse(gltfModel, group, {
+    scale = 1.85,
+    position = [0, 1.85, -2.5]
+} = {}) {
+    if (!gltfModel || !gltfModel.scene) return false;
+
+    const house = gltfModel.scene;
+    house.traverse((child) => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            if (child.material) {
+                if (child.material.isMeshStandardMaterial || child.material.isMeshPhysicalMaterial) {
+                    child.material.metalness = 0.0;
+                    child.material.roughness = 0.5;
+                }
+                child.material.side = THREE.DoubleSide;
+                child.material.transparent = true;
+                child.material.alphaTest = 0.02;
+                child.material.depthWrite = true;
+                child.material.toneMapped = false;
+                if (child.material.map) {
+                    child.material.map.colorSpace = THREE.SRGBColorSpace;
+                    child.material.map.needsUpdate = true;
+                }
+            }
+        }
+    });
+
+    house.rotation.set(0, 0, 0);
+    house.scale.set(scale, scale, scale);
+    house.position.fromArray(position);
+    group.add(house);
+    group.userData.glbHouse = house;
+
+    return true;
+}
+
+function buildFamilyA(gltfModel, houseModel = null) {
     const g = new THREE.Group();
     g.add(makeGroundPatch(0xd8ebb0));   // light lime — town garden
 
-    const arch = makeBackdrop(0x3b6fa8, 'Family A');
+    const arch = makeBackdrop(0x3b6fa8, 'Tamil Family');
     g.add(arch);
 
-    // Figures
-    const p1 = makeFigure({ bodyColor: 0x2c3e80, headColor: 0xf0c890 });
-    p1.position.set(-1.0, 0, -1.0);
-    g.add(p1);
+    // South Indian House backdrop
+    setupGlbHouse(houseModel, g, {
+        scale: 1.85,
+        position: [0, 1.85, -2.5]
+    });
 
-    const p2 = makeFigure({ bodyColor: 0xe07b39, headColor: 0xf5c8a0 });
-    p2.position.set(0.2, 0, -1.2);
-    p2.rotation.y = -0.3;
-    g.add(p2);
+    // Tamil Family (standing in front of house on glowing pedestal)
+    const hasGlb = setupGlbFamily(gltfModel, g, {
+        scale: 0.11,
+        position: [0, 1.15, -1.0],
+        pedestalColor: 0xfff3cf,
+        starColor: 0xffe680
+    });
 
-    const child = makeFigure({ bodyColor: 0x4caf70, headColor: 0xf0c890, scale: 0.76 });
-    child.position.set(1.1, 0, -0.7);
-    g.add(child);
+    if (!hasGlb) {
+        // Fallback figures
+        const p1 = makeFigure({ bodyColor: 0x2c3e80, headColor: 0xf0c890 });
+        p1.position.set(-1.0, 0, -1.0);
+        g.add(p1);
+
+        const p2 = makeFigure({ bodyColor: 0xe07b39, headColor: 0xf5c8a0 });
+        p2.position.set(0.2, 0, -1.2);
+        p2.rotation.y = -0.3;
+        g.add(p2);
+
+        const child = makeFigure({ bodyColor: 0x4caf70, headColor: 0xf0c890, scale: 0.76 });
+        child.position.set(1.1, 0, -0.7);
+        g.add(child);
+
+        g.userData.figures = [p1, p2, child];
+    }
 
     // Town garden prop: flower bed
     for (let i = 0; i < 8; i++) {
@@ -214,31 +346,49 @@ function buildFamilyA() {
         g.add(flower);
     }
 
-    g.userData.figures = [p1, p2, child];
     g.userData.label   = arch.userData.label;
     return g;
 }
 
-function buildFamilyB() {
+function buildFamilyB(gltfModel, houseModel = null) {
     const g = new THREE.Group();
     g.add(makeGroundPatch(0xc8e6a0));  // earthy green — farmhouse
 
-    const arch = makeBackdrop(0x7a5c2e, 'Family B');
+    const arch = makeBackdrop(0x7a5c2e, 'Gujarathi Family');
     g.add(arch);
 
-    // Figures
-    const p1 = makeFigure({ bodyColor: 0x8b5e3c, headColor: 0xc8935a, hat: true });
-    p1.position.set(-1.0, 0, -1.0);
-    g.add(p1);
+    // North Indian House backdrop
+    setupGlbHouse(houseModel, g, {
+        scale: 1.80,
+        position: [0, 1.80, -2.5]
+    });
 
-    const p2 = makeFigure({ bodyColor: 0xd63384, headColor: 0xc8935a });
-    p2.position.set(0.2, 0, -1.2);
-    p2.rotation.y = 0.2;
-    g.add(p2);
+    // Gujarathi Family (standing in front of house on glowing pedestal)
+    const hasGlb = setupGlbFamily(gltfModel, g, {
+        scale: 0.11,
+        position: [0, 1.15, -1.0],
+        pedestalColor: 0xdfefc0,
+        lightColor: 0xfffae0,
+        starColor: 0xa8f080
+    });
 
-    const child = makeFigure({ bodyColor: 0xf4c430, headColor: 0xc8935a, scale: 0.73 });
-    child.position.set(1.1, 0, -0.7);
-    g.add(child);
+    if (!hasGlb) {
+        // Figures
+        const p1 = makeFigure({ bodyColor: 0x8b5e3c, headColor: 0xc8935a, hat: true });
+        p1.position.set(-1.0, 0, -1.0);
+        g.add(p1);
+
+        const p2 = makeFigure({ bodyColor: 0xd63384, headColor: 0xc8935a });
+        p2.position.set(0.2, 0, -1.2);
+        p2.rotation.y = 0.2;
+        g.add(p2);
+
+        const child = makeFigure({ bodyColor: 0xf4c430, headColor: 0xc8935a, scale: 0.73 });
+        child.position.set(1.1, 0, -0.7);
+        g.add(child);
+
+        g.userData.figures = [p1, p2, child];
+    }
 
     // Farm prop: small tree
     const trunk = new THREE.Mesh(
@@ -261,31 +411,49 @@ function buildFamilyB() {
     leaves.updateMatrix();
     g.add(leaves);
 
-    g.userData.figures = [p1, p2, child];
     g.userData.label   = arch.userData.label;
     return g;
 }
 
-function buildFamilyC() {
+function buildFamilyC(gltfModel, houseModel = null) {
     const g = new THREE.Group();
     g.add(makeGroundPatch(0xbdd8f0));  // cool blue — city courtyard
 
-    const arch = makeBackdrop(0x2b9c8e, 'Family C');
+    const arch = makeBackdrop(0x2b9c8e, 'Punjabi Family');
     g.add(arch);
 
-    // Figures — grandparent + parent + child
-    const gp = makeFigure({ bodyColor: 0x7a8090, headColor: 0xf0e0d0, scale: 1.02 });
-    gp.position.set(-1.0, 0, -1.0);
-    g.add(gp);
+    // Northwestern House backdrop
+    setupGlbHouse(houseModel, g, {
+        scale: 1.80,
+        position: [0, 1.80, -2.5]
+    });
 
-    const p = makeFigure({ bodyColor: 0x2b9c8e, headColor: 0xf5c8a0 });
-    p.position.set(0.2, 0, -1.2);
-    p.rotation.y = -0.2;
-    g.add(p);
+    // Punjabi Family (standing in front of house on glowing pedestal)
+    const hasGlb = setupGlbFamily(gltfModel, g, {
+        scale: 0.11,
+        position: [0, 1.15, -1.0],
+        pedestalColor: 0xc8e0f8,
+        lightColor: 0xe8f4ff,
+        starColor: 0x80d0ff
+    });
 
-    const child = makeFigure({ bodyColor: 0x9b59b6, headColor: 0xf5c8a0, scale: 0.74 });
-    child.position.set(1.1, 0, -0.7);
-    g.add(child);
+    if (!hasGlb) {
+        // Figures — grandparent + parent + child
+        const gp = makeFigure({ bodyColor: 0x7a8090, headColor: 0xf0e0d0, scale: 1.02 });
+        gp.position.set(-1.0, 0, -1.0);
+        g.add(gp);
+
+        const p = makeFigure({ bodyColor: 0x2b9c8e, headColor: 0xf5c8a0 });
+        p.position.set(0.2, 0, -1.2);
+        p.rotation.y = -0.2;
+        g.add(p);
+
+        const child = makeFigure({ bodyColor: 0x9b59b6, headColor: 0xf5c8a0, scale: 0.74 });
+        child.position.set(1.1, 0, -0.7);
+        g.add(child);
+
+        g.userData.figures = [gp, p, child];
+    }
 
     // City prop: small fountain
     const basin = new THREE.Mesh(
@@ -308,7 +476,6 @@ function buildFamilyC() {
     water.updateMatrix();
     g.add(water);
 
-    g.userData.figures = [gp, p, child];
     g.userData.label   = arch.userData.label;
     return g;
 }
@@ -352,7 +519,23 @@ export class World {
         this._elapsed     = 0;
     }
 
-    build() {
+    /** Load external GLTF model with safe error fallback */
+    async loadModel(url) {
+        return new Promise((resolve) => {
+            const loader = new GLTFLoader();
+            loader.load(
+                url,
+                (gltf) => resolve(gltf),
+                undefined,
+                (err) => {
+                    console.warn(`[GLTFLoader] Warning loading ${url}:`, err);
+                    resolve(null);
+                }
+            );
+        });
+    }
+
+    build(models = {}) {
         // 360° garden sky + ground + trees
         this._garden = new GardenEnvironment(this.scene, {
             path:       false,    // path would look odd mid-field
@@ -365,10 +548,18 @@ export class World {
         this._buildLighting();
         this._buildCaption();
 
-        // Family groups
-        this.familyA = buildFamilyA();
-        this.familyB = buildFamilyB();
-        this.familyC = buildFamilyC();
+        // Support both single model (legacy) or multi-model object { familyA, familyB, familyC, houseA, houseB, houseC }
+        const gltfA = models?.familyA || (models?.scene ? models : null);
+        const gltfB = models?.familyB || null;
+        const gltfC = models?.familyC || null;
+        const houseA = models?.houseA || null;
+        const houseB = models?.houseB || null;
+        const houseC = models?.houseC || null;
+
+        // Family groups — Family A (myfamily + southindianhouse), Family B (northindian + northindianhouse), Family C (northwestfamily + northwesternhouse)
+        this.familyA = buildFamilyA(gltfA, houseA);
+        this.familyB = buildFamilyB(gltfB, houseB);
+        this.familyC = buildFamilyC(gltfC, houseC);
 
         // Initial positions: A at centre (first beat), B and C off-screen to sides
         this.familyA.position.set(-5.5, 0, 0);
@@ -411,41 +602,13 @@ export class World {
     }
 
     _buildCaption() {
-        this.captionLabel = new TextLabel({
-            text:        '',
-            worldWidth:  3.6,
-            fontSize:    70,
-            color:       '#ffffff',
-            background:  'rgba(12,30,52,0.74)',
-            outlineWidth: 0,
-            padding:     26
-        });
-        this.captionLabel.mesh.position.set(0, 2.90, -2.2);
-        this.captionLabel.mesh.matrixAutoUpdate = true;
-        this.scene.add(this.captionLabel.mesh);
+        // Dialogue subtitle box removed entirely per user request
+        this.captionLabel = null;
     }
 
     _buildAha() {
-        this.ahaGroup = new THREE.Group();
-        this.ahaGroup.visible = false;
-
-        const items = [
-            { emoji: '🍽️', color: '#e76f51', x: -2.0 },
-            { emoji: '📖', color: '#4a7abf', x: -1.0 },
-            { emoji: '❤️',  color: '#e74c8c', x:  0.0 },
-            { emoji: '🎵', color: '#52b788', x:  1.0 },
-            { emoji: '🤝', color: '#8b5cf6', x:  2.0 }
-        ];
-
-        items.forEach(({ emoji, color, x }) => {
-            const badge = makeIconBadge(emoji, color);
-            badge.position.set(x, 2.7, -2.0);
-            badge.userData.baseY = 2.7;
-            badge.matrixAutoUpdate = true;
-            this.ahaGroup.add(badge);
-        });
-
-        this.scene.add(this.ahaGroup);
+        // 5 icons removed per user request
+        this.ahaGroup = null;
     }
 
     _buildFinalMessage() {
@@ -454,11 +617,12 @@ export class World {
             worldWidth:  4.0,
             fontSize:    80,
             color:       '#ffe082',
-            background:  'rgba(25,8,55,0.78)',
-            outlineWidth: 0,
+            background:  'rgba(25,8,55,0.88)',
+            borderColor: '#ffd54f',
+            borderWidth: 4,
             padding:     34
         });
-        this.finalLabel.mesh.position.set(0, 3.5, -3.0);
+        this.finalLabel.mesh.position.set(0, 3.1, -0.80);
         this.finalLabel.mesh.matrixAutoUpdate = true;
         this.finalLabel.mesh.visible = false;
         this.scene.add(this.finalLabel.mesh);
@@ -467,7 +631,7 @@ export class World {
     /* -------------------------------------------------------------- API */
 
     say(text) {
-        if (this.captionLabel) this.captionLabel.setText(text);
+        // Dialogue subtitle box removed entirely per user request
     }
 
     showFamily(which) {
@@ -481,13 +645,13 @@ export class World {
         const fromX   = fam.position.x;
         fam.visible   = true;
 
-        return this.tweener.add(1.6, (p) => {
+        return this.tweener.add(2.0, (p) => {
             fam.position.x = fromX + (targetX - fromX) * p;
         });
     }
 
     showAllFamilies() {
-        const targets = { A: -5.2, B: 0, C: 5.2 };
+        const targets = { A: -4.2, B: 0, C: 4.2 };
         const froms   = {
             A: this.familyA.position.x,
             B: this.familyB.position.x,
@@ -504,11 +668,24 @@ export class World {
     }
 
     showAha(visible) {
-        if (this.ahaGroup) this.ahaGroup.visible = visible;
+        // 5 icons removed per user request
     }
 
     showFinalMessage(visible) {
-        if (this.finalLabel) this.finalLabel.mesh.visible = visible;
+        if (this.finalLabel?.mesh) this.finalLabel.mesh.visible = visible;
+    }
+
+    triggerInteraction() {
+        [this.familyA, this.familyB, this.familyC].forEach((fam) => {
+            if (fam?.visible && fam.userData?.glbModel) {
+                const m = fam.userData.glbModel;
+                this.tweener.add(0.7, (p) => {
+                    const s = 0.11 * (1 + Math.sin(p * Math.PI) * 0.18);
+                    m.scale.set(s, s, s);
+                    m.rotation.z = Math.PI / 2 + Math.sin(p * Math.PI * 2) * 0.10;
+                });
+            }
+        });
     }
 
     /* -------------------------------------------------------------- loop */
@@ -522,6 +699,18 @@ export class World {
         // Animate all visible family figures
         [this.familyA, this.familyB, this.familyC].forEach((fam, fi) => {
             if (!fam?.visible) return;
+            if (fam.userData.glbModel) {
+                fam.userData.glbModel.position.y = 1.15 + Math.sin(elapsed * 2.0 + fi) * 0.035;
+                fam.userData.glbModel.rotation.z = Math.PI / 2 + Math.sin(elapsed * 1.2) * 0.02;
+            }
+            if (fam.userData.sparkles) {
+                fam.userData.sparkles.rotation.y = elapsed * 0.5;
+                fam.userData.sparkles.children.forEach((star) => {
+                    star.position.y = star.userData.baseY + Math.sin(elapsed * 3.0 + star.userData.phase) * 0.08;
+                    star.rotation.x = elapsed * 2.0;
+                    star.rotation.z = elapsed * 1.5;
+                });
+            }
             fam.userData.figures?.forEach((fig, i) => {
                 if (!fig?.userData?.animated) return;
                 const t = elapsed + fi * 1.4 + i * 0.8;
@@ -538,15 +727,7 @@ export class World {
             }
         });
 
-        // Aha icons float
-        if (this.ahaGroup?.visible) {
-            this.ahaGroup.children.forEach((icon, i) => {
-                icon.position.y = (icon.userData.baseY || 2.7) + Math.sin(elapsed * 1.1 + i * 1.0) * 0.048;
-            });
-        }
-
-        // Captions face viewer
-        if (this.captionLabel) this.captionLabel.mesh.lookAt(0, 2.9, 5);
+        // Final label faces viewer
         if (this.finalLabel?.mesh?.visible) this.finalLabel.mesh.lookAt(0, 3.5, 5);
     }
 }

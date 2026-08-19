@@ -15,12 +15,12 @@ import { Ease } from '../shared/tween.js';
    ========================================================================== */
 
 const CAMERA_SHOTS = {
-    wide:     { pos: [0,   1.75, 5.5], target: [0,   1.5, 0]    },
-    familyA:  { pos: [-0.4, 1.75, 4.5], target: [-0.4, 1.4, -1] },
-    familyB:  { pos: [0.2,  1.75, 4.5], target: [0.2,  1.4, -1] },
-    familyC:  { pos: [0.4,  1.75, 4.5], target: [0.4,  1.4, -1] },
-    together: { pos: [0,    2.0,  7.5], target: [0,    1.6, 0]   },
-    aha:      { pos: [0,    2.1,  6.5], target: [0,    2.5, -1]  },
+    wide:     { pos: [0, 1.75, 5.5], target: [0, 1.5, 0] },
+    familyA:  { pos: [0, 1.45, 2.5], target: [0, 1.25, -1.0] }, // zoomed in close-up for Tamil family
+    familyB:  { pos: [0, 1.45, 2.5], target: [0, 1.25, -1.0] }, // zoomed in close-up for Gujarathi family
+    familyC:  { pos: [0, 1.45, 2.5], target: [0, 1.25, -1.0] }, // zoomed in close-up for Punjabi family
+    together: { pos: [0, 2.10, 7.2], target: [0, 1.5, 0] },
+    aha:      { pos: [0, 2.00, 5.8], target: [0, 2.2, -1.0] },
 };
 
 export class Story {
@@ -83,39 +83,39 @@ export class Story {
                 await this.hold(0.8);
             })) break;
 
-            /* Beat 1 — Family A ---------------------------------------- */
-            if (!await beat('1 family A', async () => {
-                this.camera.moveTo({ ...CAMERA_SHOTS.familyA, seconds: 2.5 });
+            /* Beat 1 — Tamil Family ------------------------------------ */
+            if (!await beat('1 tamil family', async () => {
+                this.camera.moveTo({ ...CAMERA_SHOTS.familyA, seconds: 2.2 });
                 await this.world.showFamily('A');
-                this.world.say('Here is one family.');
-                await this.audio.narrate('c2-familyA', 'Here is one family.');
+                this.world.say('Here is a Tamil family.');
+                await this.audio.narrate('c2-tamil', 'Here is a Tamil family.');
                 await this.hold(0.6);
                 this.world.say('They wake up, get ready and begin their day.');
-                await this.audio.narrate('c2-familyA-day', 'They wake up, get ready and begin their day.');
+                await this.audio.narrate('c2-tamil-day', 'They wake up, get ready and begin their day.');
                 await this.hold(1.5);
             })) break;
 
-            /* Beat 2 — Family B ---------------------------------------- */
-            if (!await beat('2 family B', async () => {
-                this.camera.moveTo({ ...CAMERA_SHOTS.familyB, seconds: 2.8 });
+            /* Beat 2 — Gujarathi Family -------------------------------- */
+            if (!await beat('2 gujarathi family', async () => {
+                this.camera.moveTo({ ...CAMERA_SHOTS.familyB, seconds: 2.2 });
                 await this.world.showFamily('B');
-                this.world.say('Now meet another family.');
-                await this.audio.narrate('c2-familyB', 'Now meet another family.');
+                this.world.say('Now meet a Gujarathi family.');
+                await this.audio.narrate('c2-gujarati', 'Now meet a Gujarathi family.');
                 await this.hold(0.6);
-                this.world.say('Their day may look different.');
-                await this.audio.narrate('c2-familyB-diff', 'Their day may look different.');
+                this.world.say('Their day and traditions have their own special charm.');
+                await this.audio.narrate('c2-gujarati-day', 'Their day and traditions have their own special charm.');
                 await this.hold(1.5);
             })) break;
 
-            /* Beat 3 — Family C ---------------------------------------- */
-            if (!await beat('3 family C', async () => {
-                this.camera.moveTo({ ...CAMERA_SHOTS.familyC, seconds: 2.8 });
+            /* Beat 3 — Punjabi Family ---------------------------------- */
+            if (!await beat('3 punjabi family', async () => {
+                this.camera.moveTo({ ...CAMERA_SHOTS.familyC, seconds: 2.2 });
                 await this.world.showFamily('C');
-                this.world.say('Here is another family.');
-                await this.audio.narrate('c2-familyC', 'Here is another family.');
+                this.world.say('Here is a Punjabi family.');
+                await this.audio.narrate('c2-punjabi', 'Here is a Punjabi family.');
                 await this.hold(0.6);
-                this.world.say('Their home and routine are different too.');
-                await this.audio.narrate('c2-familyC-diff', 'Their home and routine are different too.');
+                this.world.say('Their home and routine are full of joy too.');
+                await this.audio.narrate('c2-punjabi-day', 'Their home and routine are full of joy too.');
                 await this.hold(1.5);
             })) break;
 

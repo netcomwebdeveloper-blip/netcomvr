@@ -86,7 +86,7 @@ class App {
     }
 
     initManagers() {
-        this.audio = new AudioManager({ volume: CONFIG.audio.volume });
+        this.audio = new AudioManager({ volume: CONFIG.audio.volume, voiceHint: 'en-IN' });
         this.world = new World(this.scene, this.tweener);
 
         // Wider initial view for Concept 2 (shows wider garden with three families)
@@ -113,7 +113,21 @@ class App {
             await this.audio.registerNarrationTrack(CONFIG.audio.narrationTrack, []);
         }
 
-        this.world.build();
+        const [
+            gltfA, gltfB, gltfC,
+            houseA, houseB, houseC
+        ] = await Promise.all([
+            this.world.loadModel('/assets/myfamily.glb'),
+            this.world.loadModel('/assets/northindian.glb'),
+            this.world.loadModel('/assets/northwestfamily.glb'),
+            this.world.loadModel('/assets/southindianhouse.glb'),
+            this.world.loadModel('/assets/northindianhouse.glb'),
+            this.world.loadModel('/assets/northwesternhouse.glb')
+        ]);
+        this.world.build({
+            familyA: gltfA, familyB: gltfB, familyC: gltfC,
+            houseA, houseB, houseC
+        });
         this.refreshShadows();
 
         const slot = document.getElementById('vr-slot');
@@ -127,7 +141,6 @@ class App {
 
         this.renderer.setAnimationLoop(() => this.render());
         this.armTitleCard();
-        this._buildVRInfoBanner();
     }
 
     armTitleCard() {
@@ -143,41 +156,12 @@ class App {
         card?.addEventListener('click', () => begin(true), { once: true });
         window.addEventListener('keydown', () => begin(true), { once: true });
         setTimeout(() => begin(false), 9000);
-    }
 
-    _buildVRInfoBanner() {
-        const hasXR = !!navigator.xr;
-        const banner = document.createElement('div');
-        banner.id = 'vr-info-banner';
-
-        Object.assign(banner.style, {
-            position:       'fixed',
-            bottom:         hasXR ? '64px' : '16px',
-            left:           '50%',
-            transform:      'translateX(-50%)',
-            zIndex:         '12',
-            padding:        '9px 18px',
-            borderRadius:   '999px',
-            background:     'rgba(10,20,40,0.80)',
-            backdropFilter: 'blur(8px)',
-            color:          '#a8c4e8',
-            font:           '600 13px "Baloo 2", system-ui',
-            whiteSpace:     'nowrap',
-            pointerEvents:  'none',
-            opacity:        '0',
-            transition:     'opacity 0.6s ease',
-            textAlign:      'center'
+        window.addEventListener('pointerdown', (e) => {
+            if (this.started && e.target.tagName !== 'BUTTON' && !e.target.closest('#title-card')) {
+                this.world.triggerInteraction();
+            }
         });
-
-        if (hasXR) {
-            banner.textContent = '🖱️ Drag to look around  ·  🥽 Enter VR for full immersion';
-        } else {
-            banner.textContent = '🖱️ Drag to look around 360°  ·  🥽 VR requires a WebXR headset';
-        }
-
-        document.body.appendChild(banner);
-        setTimeout(() => { banner.style.opacity = '1'; }, 1200);
-        setTimeout(() => { banner.style.opacity = '0'; }, 8500);
     }
 
     refreshShadows() {

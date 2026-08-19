@@ -361,6 +361,40 @@ export class AudioManager {
         });
     }
 
+    #pickVoice(voices) {
+        if (!voices || voices.length === 0) return null;
+
+        const priorityKeywords = [
+            'ravi', 'heera', 'kavya', 'deepa', 'priya', 'veena', 'neerja', 'prabhat',
+            'tamil', 'telugu', 'kannada', 'malayalam', 'india', 'indian'
+        ];
+
+        // 1. Prioritize Indian English voices (en-IN, en_IN, ta-IN, etc.)
+        const indianVoices = voices.filter((v) => {
+            const lang = (v.lang || '').toLowerCase();
+            const name = (v.name || '').toLowerCase();
+            return lang.includes('en-in') || lang.includes('en_in') || lang.includes('ta') || lang.includes('te') ||
+                   priorityKeywords.some((k) => name.includes(k));
+        });
+
+        if (indianVoices.length > 0) {
+            const preferred = indianVoices.find((v) => {
+                const name = (v.name || '').toLowerCase();
+                return priorityKeywords.some((k) => name.includes(k)) || name.includes('natural') || name.includes('online');
+            });
+            return preferred || indianVoices[0];
+        }
+
+        // 2. Fallback to voiceHint match
+        if (this.voiceHint) {
+            const hintMatch = voices.find((v) => (v.lang || '').toLowerCase().startsWith(this.voiceHint.toLowerCase()));
+            if (hintMatch) return hintMatch;
+        }
+
+        // 3. Fallback to any English voice
+        return voices.find((v) => (v.lang || '').toLowerCase().startsWith('en')) || voices[0] || null;
+    }
+
     #speak(text, fallbackSeconds) {
         return new Promise((resolve) => {
             let settled = false;
@@ -372,12 +406,15 @@ export class AudioManager {
             };
             try {
                 const utterance  = new SpeechSynthesisUtterance(text);
-                utterance.rate   = 0.88;   // slightly slow — child-friendly
-                utterance.pitch  = 1.05;   // warm, friendly
+                utterance.lang   = 'en-IN'; // Indian English
+                utterance.rate   = 0.86;   // child-friendly clear pacing
+                utterance.pitch  = 1.05;   // warm, friendly tone
                 utterance.volume = 1.0;
-                const voices = window.speechSynthesis.getVoices() || [];
-                const match  = voices.find((v) => v.lang?.toLowerCase().startsWith(this.voiceHint));
+
+                const voices = window.speechSynthesis?.getVoices() || [];
+                const match  = this.#pickVoice(voices);
                 if (match) utterance.voice = match;
+
                 utterance.onend  = finish;
                 utterance.onerror = finish;
                 window.speechSynthesis.speak(utterance);
